@@ -1,21 +1,29 @@
 import sys
 import os
 from PySide6.QtWidgets import (
-    QApplication, QWidget, QHBoxLayout, QVBoxLayout,
-    QListWidget, QListWidgetItem, QLabel, QLineEdit,
-    QPushButton, QSizePolicy, QFrame, QFileDialog, QMessageBox
+    QApplication, QWidget, QHBoxLayout, QVBoxLayout, QListWidget, QListWidgetItem,
+    QLabel, QLineEdit, QPushButton, QSizePolicy, QFrame, QFileDialog, QMessageBox,
+    QFontComboBox, QSpinBox, QColorDialog, QSlider, QHBoxLayout
 )
 from PySide6.QtGui import QPixmap, QIcon, QPainter, QColor, QFont
 from PySide6.QtCore import Qt, QSize
 
+
 class MainWindow(QWidget):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("Watermark Studio")
-        self.resize(1000, 600)
-        self.image_paths = []   # 存储导入的图片路径
+        self.setWindowTitle("Watermark Studio – 阶段 2 高级水印")
+        self.resize(1100, 650)
+        self.image_paths = []
         self.current_image = None
         self.watermarked_pixmap = None
+
+        # 默认水印参数
+        self.font_family = "Arial"
+        self.font_size = 36
+        self.font_color = QColor(255, 255, 255)
+        self.opacity = 180  # 0–255 scale
+
         self.init_ui()
 
     def init_ui(self):
@@ -43,23 +51,65 @@ class MainWindow(QWidget):
         self.preview_label.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         center_layout.addWidget(self.preview_label)
 
-        # 导入按钮
         self.btn_import = QPushButton("导入图片")
         self.btn_import.clicked.connect(self.import_images)
         center_layout.addWidget(self.btn_import)
 
         main_layout.addWidget(center_frame, stretch=1)
 
-        # 右侧：水印控制区
+        # 右侧控制区
         right_frame = QFrame()
         right_layout = QVBoxLayout(right_frame)
-        right_layout.setContentsMargins(0, 0, 0, 0)
-        right_layout.setSpacing(15)
+        right_layout.setSpacing(10)
 
+        # 水印文本输入
         self.text_input = QLineEdit()
         self.text_input.setPlaceholderText("输入水印文本")
+        self.text_input.textChanged.connect(self.update_preview)
         right_layout.addWidget(self.text_input)
 
+        # 字体选择
+        font_layout = QHBoxLayout()
+        self.font_box = QFontComboBox()
+        self.font_box.setCurrentFont(QFont("Arial"))
+        self.font_box.currentFontChanged.connect(self.on_font_changed)
+        font_layout.addWidget(QLabel("字体:"))
+        font_layout.addWidget(self.font_box)
+        right_layout.addLayout(font_layout)
+
+        # 字号
+        size_layout = QHBoxLayout()
+        self.font_size_box = QSpinBox()
+        self.font_size_box.setRange(8, 120)
+        self.font_size_box.setValue(36)
+        self.font_size_box.valueChanged.connect(self.on_font_size_changed)
+        size_layout.addWidget(QLabel("字号:"))
+        size_layout.addWidget(self.font_size_box)
+        right_layout.addLayout(size_layout)
+
+        # 颜色选择
+        color_layout = QHBoxLayout()
+        self.btn_color = QPushButton("选择颜色")
+        self.btn_color.clicked.connect(self.choose_color)
+        self.color_preview = QLabel()
+        self.color_preview.setFixedSize(30, 30)
+        self.color_preview.setStyleSheet("background-color: white; border: 1px solid #ccc;")
+        color_layout.addWidget(QLabel("颜色:"))
+        color_layout.addWidget(self.btn_color)
+        color_layout.addWidget(self.color_preview)
+        right_layout.addLayout(color_layout)
+
+        # 透明度
+        opacity_layout = QHBoxLayout()
+        self.opacity_slider = QSlider(Qt.Horizontal)
+        self.opacity_slider.setRange(0, 100)
+        self.opacity_slider.setValue(70)
+        self.opacity_slider.valueChanged.connect(self.on_opacity_changed)
+        opacity_layout.addWidget(QLabel("透明度:"))
+        opacity_layout.addWidget(self.opacity_slider)
+        right_layout.addLayout(opacity_layout)
+
+        # 操作按钮
         self.btn_apply = QPushButton("应用水印")
         self.btn_apply.clicked.connect(self.apply_watermark)
         right_layout.addWidget(self.btn_apply)
@@ -88,12 +138,10 @@ class MainWindow(QWidget):
             item = QListWidgetItem(icon, os.path.basename(path))
             self.list_widget.addItem(item)
 
-        # 默认显示第一张
         self.load_image(self.image_paths[0])
         self.list_widget.setCurrentRow(0)
 
     def load_image(self, path):
-        """加载并显示图片"""
         self.current_image = path
         pixmap = QPixmap(path)
         self.preview_label.setPixmap(pixmap.scaled(
@@ -104,43 +152,63 @@ class MainWindow(QWidget):
         index = self.list_widget.row(item)
         if 0 <= index < len(self.image_paths):
             self.load_image(self.image_paths[index])
+            self.update_preview()
+
+    def choose_color(self):
+        color = QColorDialog.getColor(self.font_color, self, "选择水印颜色")
+        if color.isValid():
+            self.font_color = color
+            self.color_preview.setStyleSheet(f"background-color: {color.name()};")
+            self.update_preview()
+
+    def on_font_changed(self, font):
+        self.font_family = font.family()
+        self.update_preview()
+
+    def on_font_size_changed(self, size):
+        self.font_size = size
+        self.update_preview()
+
+    def on_opacity_changed(self, value):
+        self.opacity = int(value * 2.55)  # 转换为 0-255
+        self.update_preview()
 
     def apply_watermark(self):
-        """在当前图片上绘制文本水印"""
+        """点击按钮正式应用"""
+        self.update_preview(final=True)
+
+    def update_preview(self, final=False):
+        """实时更新预览"""
         if not self.current_image:
-            QMessageBox.warning(self, "提示", "请先选择一张图片！")
             return
 
         text = self.text_input.text().strip()
-        if not text:
-            QMessageBox.warning(self, "提示", "请输入水印文本！")
-            return
-
         base_pixmap = QPixmap(self.current_image)
         painter = QPainter(base_pixmap)
         painter.setRenderHint(QPainter.Antialiasing)
 
-        font = QFont("Arial", 36)
+        font = QFont(self.font_family, self.font_size)
         painter.setFont(font)
-        painter.setPen(QColor(255, 255, 255, 180))  # 白色半透明
+        painter.setPen(QColor(self.font_color.red(), self.font_color.green(),
+                              self.font_color.blue(), self.opacity))
+
         text_width = painter.fontMetrics().boundingRect(text).width()
         text_height = painter.fontMetrics().boundingRect(text).height()
-
-        # 放右下角
         x = base_pixmap.width() - text_width - 30
         y = base_pixmap.height() - text_height - 20
 
-        painter.drawText(x, y, text)
-        painter.end()
+        if text:
+            painter.drawText(x, y, text)
 
-        # 保存水印结果
-        self.watermarked_pixmap = base_pixmap
+        painter.end()
         self.preview_label.setPixmap(base_pixmap.scaled(
             self.preview_label.size(), Qt.KeepAspectRatio, Qt.SmoothTransformation
         ))
 
+        if final:
+            self.watermarked_pixmap = base_pixmap
+
     def save_image(self):
-        """保存加水印图片"""
         if not self.watermarked_pixmap or not self.current_image:
             QMessageBox.warning(self, "提示", "请先应用水印！")
             return
