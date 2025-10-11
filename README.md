@@ -1,34 +1,42 @@
 # Watermark-Studio
 
-Watermark-Studio is a Python application designed to help users easily add watermarks to their images. This project aims to provide a user-friendly interface and powerful features for watermarking images efficiently.
+Watermark-Studio 是一个基于 Python 的本地图形界面图片水印工具，支持 Windows 和 MacOS。它旨在为用户提供简单易用、功能丰富的图片批量加水印体验。
 
-## Features
+## 主要功能
 
-- Add text or image watermarks to your photos.
-- Customize watermark position, opacity, and size.
-- Batch processing of multiple images.
-- Save watermarked images in various formats.
+- **图片批量导入**：支持拖拽、文件选择器、文件夹批量导入，支持 JPEG、PNG（含透明）、BMP、TIFF 等主流格式。
+- **文本水印**：自定义水印内容，支持字体、字号、粗体、斜体、颜色、透明度、阴影、描边等丰富样式。
+- **水印布局**：九宫格一键定位，支持鼠标拖拽水印到任意位置，支持水印旋转。
+- **实时预览**：所有水印参数调整均可在主预览区实时显示效果。
+- **导出设置**：支持 JPEG/PNG 格式导出，防止覆盖原图，支持自定义文件命名规则（前缀/后缀）。
+- **水印模板**：可保存、加载、管理水印模板，快速复用常用设置。
+- **跨平台**：支持 Windows 和 MacOS，界面美观，操作流畅。
 
-## Installation
+## 安装方法
 
-To get started with Watermark-Studio, you'll need to install the required dependencies. You can do this using pip:
+1. 安装依赖（建议使用虚拟环境）：
 
-```bash
-pip install -r requirements.txt
-```
+   ```bash
+   pip install -r requirements.txt
+   ```
 
-## Usage
+2. 运行程序：
 
-To run the application, execute the following command:
+   ```bash
+   python src/main.py
+   ```
 
-```bash
-python src/main.py
-```
+## 使用说明
 
-## Contributing
+1. 导入图片（支持拖拽、选择文件或文件夹）。
+2. 在左侧列表选择图片，右侧设置水印内容、样式和布局。
+3. 实时预览水印效果，调整满意后点击“导出图片”。
+4. 可保存当前水印设置为模板，方便下次快速应用。
 
-Contributions are welcome! If you have suggestions for improvements or new features, please open an issue or submit a pull request.
+## 贡献与反馈
 
-## License
+欢迎提出建议或提交 PR 改进本项目。如有问题请在 GitHub 提 issue。
 
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+## 许可证
+
+本项目采用 MIT License 开源协议，详见 [LICENSE](LICENSE) 文件。

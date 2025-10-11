@@ -511,10 +511,15 @@ class MainWindow(QWidget):
 
         prefix = ""
         suffix = ""
+        # 自动补全前缀/后缀
         if self.radio_prefix.isChecked():
             prefix = self.prefix_input.text().strip()
+            if not prefix:
+                prefix = "wm_"
         elif self.radio_suffix.isChecked():
             suffix = self.prefix_input.text().strip()
+            if not suffix:
+                suffix = "_watermarked"
 
         # 遍历导出所有图片
         for path in self.image_paths:

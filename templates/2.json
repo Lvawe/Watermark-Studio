@@ -1,0 +1,17 @@
+{
+  "text": "e3e3",
+  "font_family": "Arial",
+  "font_size": 120,
+  "font_bold": false,
+  "font_italic": false,
+  "font_color": 4278227347,
+  "font_opacity": 255,
+  "shadow_enabled": false,
+  "outline_enabled": false,
+  "watermark_pos_mode": "custom",
+  "watermark_angle": -61,
+  "watermark_custom_pos": [
+    505,
+    315
+  ]
+}
