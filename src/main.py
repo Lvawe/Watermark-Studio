@@ -3,10 +3,10 @@ import os
 from PySide6.QtWidgets import (
     QApplication, QWidget, QHBoxLayout, QVBoxLayout, QListWidget, QListWidgetItem,
     QLabel, QLineEdit, QPushButton, QSizePolicy, QFrame, QFileDialog, QMessageBox,
-    QComboBox, QRadioButton, QButtonGroup, QGroupBox, QColorDialog, QSlider, QFontComboBox, QSpinBox, QCheckBox
+    QComboBox, QRadioButton, QButtonGroup, QGroupBox, QColorDialog, QSlider, QFontComboBox, QSpinBox, QCheckBox, QGridLayout
 )
-from PySide6.QtGui import QPixmap, QIcon, QPainter, QColor, QFont
-from PySide6.QtCore import Qt, QSize
+from PySide6.QtGui import QPixmap, QIcon, QPainter, QColor, QFont, QMouseEvent, QTransform
+from PySide6.QtCore import Qt, QSize, QPoint
 
 
 SUPPORTED_FORMATS = (".jpg", ".jpeg", ".png", ".bmp", ".tiff")
@@ -33,6 +33,14 @@ class MainWindow(QWidget):
         self.font_opacity = 180  # 0-255
         self.shadow_enabled = False
         self.outline_enabled = False
+
+        # 新增水印布局相关属性
+        self.watermark_pos_mode = "bottom_right"  # 九宫格预设，默认右下
+        self.watermark_offset = QPoint(-30, -20)  # 偏移量（用于拖拽）
+        self.watermark_dragging = False
+        self.watermark_drag_start = QPoint(0, 0)
+        self.watermark_custom_pos = None  # 手动拖拽的像素坐标
+        self.watermark_angle = 0  # 旋转角度
 
         self.init_ui()
 
@@ -71,41 +79,40 @@ class MainWindow(QWidget):
         # 右侧：导出控制区
         right_frame = QFrame()
         right_layout = QVBoxLayout(right_frame)
-        right_layout.setSpacing(10)
+        right_layout.setSpacing(18)  # 分组间距更大
 
-        # 水印文本输入（保留）
+        # ----------- 水印样式分组 -----------
+        style_group = QGroupBox("水印样式")
+        style_group.setStyleSheet("QGroupBox { font-size: 18px; font-weight: bold; }")
+        style_layout = QVBoxLayout(style_group)
+
         self.text_input = QLineEdit()
         self.text_input.setPlaceholderText("输入水印文本")
-        right_layout.addWidget(self.text_input)
+        style_layout.addWidget(self.text_input)
 
-        # ----------- 新增：水印样式设置 -----------
-        # 字体选择
         font_layout = QHBoxLayout()
         font_layout.addWidget(QLabel("字体:"))
         self.font_combo = QFontComboBox()
         self.font_combo.setCurrentFont(QFont(self.font_family))
         self.font_combo.currentFontChanged.connect(self.on_font_changed)
         font_layout.addWidget(self.font_combo)
-
         font_layout.addWidget(QLabel("字号:"))
         self.font_size_spin = QSpinBox()
         self.font_size_spin.setRange(10, 120)
         self.font_size_spin.setValue(self.font_size)
         self.font_size_spin.valueChanged.connect(self.on_font_size_changed)
         font_layout.addWidget(self.font_size_spin)
-        right_layout.addLayout(font_layout)
+        style_layout.addLayout(font_layout)
 
-        # 粗体、斜体
-        style_layout = QHBoxLayout()
+        style2_layout = QHBoxLayout()
         self.bold_check = QCheckBox("粗体")
         self.bold_check.stateChanged.connect(self.on_bold_changed)
-        style_layout.addWidget(self.bold_check)
+        style2_layout.addWidget(self.bold_check)
         self.italic_check = QCheckBox("斜体")
         self.italic_check.stateChanged.connect(self.on_italic_changed)
-        style_layout.addWidget(self.italic_check)
-        right_layout.addLayout(style_layout)
+        style2_layout.addWidget(self.italic_check)
+        style_layout.addLayout(style2_layout)
 
-        # 颜色选择
         color_layout = QHBoxLayout()
         color_layout.addWidget(QLabel("颜色:"))
         self.color_btn = QPushButton()
@@ -113,9 +120,8 @@ class MainWindow(QWidget):
         self.color_btn.setStyleSheet(f"background: {self.font_color.name()};")
         self.color_btn.clicked.connect(self.choose_color)
         color_layout.addWidget(self.color_btn)
-        right_layout.addLayout(color_layout)
+        style_layout.addLayout(color_layout)
 
-        # 透明度
         opacity_layout = QHBoxLayout()
         opacity_layout.addWidget(QLabel("透明度:"))
         self.opacity_slider = QSlider(Qt.Horizontal)
@@ -123,9 +129,8 @@ class MainWindow(QWidget):
         self.opacity_slider.setValue(self.font_opacity)
         self.opacity_slider.valueChanged.connect(self.on_opacity_changed)
         opacity_layout.addWidget(self.opacity_slider)
-        right_layout.addLayout(opacity_layout)
+        style_layout.addLayout(opacity_layout)
 
-        # 阴影、描边
         effect_layout = QHBoxLayout()
         self.shadow_check = QCheckBox("阴影")
         self.shadow_check.stateChanged.connect(self.on_shadow_changed)
@@ -133,18 +138,50 @@ class MainWindow(QWidget):
         self.outline_check = QCheckBox("描边")
         self.outline_check.stateChanged.connect(self.on_outline_changed)
         effect_layout.addWidget(self.outline_check)
-        right_layout.addLayout(effect_layout)
-        # ----------- 新增结束 -----------
+        style_layout.addLayout(effect_layout)
 
         self.btn_apply = QPushButton("应用水印")
         self.btn_apply.clicked.connect(self.apply_watermark)
-        right_layout.addWidget(self.btn_apply)
+        style_layout.addWidget(self.btn_apply)
+
+        right_layout.addWidget(style_group)
+
+        # ----------- 水印布局分组 -----------
+        layout_group = QGroupBox("水印布局")
+        layout_group.setStyleSheet("QGroupBox { font-size: 18px; font-weight: bold; }")
+        layout_grid = QGridLayout(layout_group)
+        positions = [
+            ("左上", "top_left"), ("上中", "top_center"), ("右上", "top_right"),
+            ("左中", "center_left"), ("正中", "center"), ("右中", "center_right"),
+            ("左下", "bottom_left"), ("下中", "bottom_center"), ("右下", "bottom_right")
+        ]
+        self.pos_buttons = {}
+        for idx, (label, mode) in enumerate(positions):
+            btn = QPushButton(label)
+            btn.setCheckable(True)
+            if mode == self.watermark_pos_mode:
+                btn.setChecked(True)
+            btn.clicked.connect(lambda checked, m=mode: self.set_watermark_pos_mode(m))
+            layout_grid.addWidget(btn, idx // 3, idx % 3)
+            self.pos_buttons[mode] = btn
+
+        # 旋转滑块
+        rotate_layout = QHBoxLayout()
+        rotate_layout.addWidget(QLabel("旋转:"))
+        self.rotate_slider = QSlider(Qt.Horizontal)
+        self.rotate_slider.setRange(-180, 180)
+        self.rotate_slider.setValue(self.watermark_angle)
+        self.rotate_slider.valueChanged.connect(self.on_rotate_changed)
+        rotate_layout.addWidget(self.rotate_slider)
+        layout_grid.addLayout(rotate_layout, 3, 0, 1, 3)
+
+        right_layout.addWidget(layout_group)
 
         # ---------------- 导出设置 ----------------
         export_group = QGroupBox("导出设置")
+        export_group.setStyleSheet("QGroupBox { font-size: 18px; font-weight: bold; }")
         export_layout = QVBoxLayout(export_group)
 
-        # 文件命名规则
         name_rule_layout = QVBoxLayout()
         name_rule_layout.addWidget(QLabel("命名规则:"))
         self.radio_original = QRadioButton("保留原文件名")
@@ -160,7 +197,6 @@ class MainWindow(QWidget):
         self.prefix_input.setPlaceholderText("例如：wm_ 或 _watermarked")
         export_layout.addWidget(self.prefix_input)
 
-        # 输出格式
         format_layout = QHBoxLayout()
         format_layout.addWidget(QLabel("输出格式:"))
         self.format_combo = QComboBox()
@@ -169,15 +205,20 @@ class MainWindow(QWidget):
         format_layout.addWidget(self.format_combo)
         export_layout.addLayout(format_layout)
 
-        right_layout.addWidget(export_group)
-
-        # 保存按钮
+        # 保存按钮放到导出设置分组内
         self.btn_save = QPushButton("导出图片")
         self.btn_save.clicked.connect(self.save_images)
-        right_layout.addWidget(self.btn_save)
+        export_layout.addWidget(self.btn_save)
 
+        right_layout.addWidget(export_group)
         right_layout.addStretch(1)
         main_layout.addWidget(right_frame)
+
+        # 恢复预览区鼠标事件支持
+        self.preview_label.setMouseTracking(True)
+        self.preview_label.mousePressEvent = self.preview_mouse_press
+        self.preview_label.mouseMoveEvent = self.preview_mouse_move
+        self.preview_label.mouseReleaseEvent = self.preview_mouse_release
 
     # ---------- 字体与样式相关槽函数 ----------
     def on_font_changed(self, font):
@@ -214,6 +255,53 @@ class MainWindow(QWidget):
     def on_outline_changed(self, state):
         self.outline_enabled = (state == Qt.Checked)
         self.apply_watermark()
+
+    # ----------- 九宫格位置选择 -----------
+    def set_watermark_pos_mode(self, mode):
+        self.watermark_pos_mode = mode
+        self.watermark_custom_pos = None  # 切换预设时取消自定义
+        for m, btn in self.pos_buttons.items():
+            btn.setChecked(m == mode)
+        self.apply_watermark()
+
+    # ----------- 旋转 -----------
+    def on_rotate_changed(self, value):
+        self.watermark_angle = value
+        self.apply_watermark()
+
+    # ----------- 预览区鼠标拖拽 -----------
+    def preview_mouse_press(self, event: QMouseEvent):
+        if event.button() == Qt.LeftButton:
+            # 判断是否点在水印区域（简化：只要点在预览区就允许拖动）
+            self.watermark_dragging = True
+            self.watermark_drag_start = event.pos()
+            if self.watermark_custom_pos is None:
+                self.watermark_custom_pos = self.calc_watermark_pos(event.pos())
+            event.accept()
+
+    def preview_mouse_move(self, event: QMouseEvent):
+        if self.watermark_dragging:
+            # 计算偏移
+            delta = event.pos() - self.watermark_drag_start
+            if self.watermark_custom_pos is not None:
+                self.watermark_custom_pos += delta
+            else:
+                self.watermark_custom_pos = self.calc_watermark_pos(event.pos())
+            self.watermark_drag_start = event.pos()
+            self.watermark_pos_mode = "custom"
+            for m, btn in self.pos_buttons.items():
+                btn.setChecked(False)
+            self.apply_watermark()
+            event.accept()
+
+    def preview_mouse_release(self, event: QMouseEvent):
+        if event.button() == Qt.LeftButton:
+            self.watermark_dragging = False
+            event.accept()
+
+    def calc_watermark_pos(self, click_pos):
+        # 将点击点作为水印中心
+        return click_pos
 
     # -------------------- 拖拽导入 --------------------
 
@@ -288,7 +376,7 @@ class MainWindow(QWidget):
             self.load_image(self.image_paths[index])
 
     def apply_watermark(self):
-        """高级文字水印（右下角，支持字体、颜色、透明度、阴影、描边）"""
+        """高级文字水印（支持九宫格、拖拽、旋转）"""
         if not self.current_image:
             QMessageBox.warning(self, "提示", "请先导入图片！")
             return
@@ -302,18 +390,49 @@ class MainWindow(QWidget):
         painter = QPainter(base_pixmap)
         painter.setRenderHint(QPainter.Antialiasing)
         font = QFont(self.font_family, self.font_size)
-        font.setBold(self.font_bold)
+        if self.font_bold:
+            font.setWeight(QFont.Weight.Bold)
+        else:
+            font.setWeight(QFont.Weight.Normal)
         font.setItalic(self.font_italic)
         painter.setFont(font)
         color = QColor(self.font_color)
         color.setAlpha(self.font_opacity)
         painter.setPen(color)
 
-        # 计算文本位置
+        # 计算文本尺寸
         tw = painter.fontMetrics().boundingRect(text).width()
         th = painter.fontMetrics().boundingRect(text).height()
-        x = base_pixmap.width() - tw - 30
-        y = base_pixmap.height() - th - 20
+
+        # 计算水印位置
+        if self.watermark_pos_mode == "custom" and self.watermark_custom_pos is not None:
+            x = self.watermark_custom_pos.x() - tw // 2
+            y = self.watermark_custom_pos.y() + th // 2
+        else:
+            w, h = base_pixmap.width(), base_pixmap.height()
+            margin = 30
+            pos_map = {
+                "top_left": (margin, margin + th),
+                "top_center": (w // 2 - tw // 2, margin + th),
+                "top_right": (w - tw - margin, margin + th),
+                "center_left": (margin, h // 2 + th // 2),
+                "center": (w // 2 - tw // 2, h // 2 + th // 2),
+                "center_right": (w - tw - margin, h // 2 + th // 2),
+                "bottom_left": (margin, h - margin),
+                "bottom_center": (w // 2 - tw // 2, h - margin),
+                "bottom_right": (w - tw - margin, h - margin),
+            }
+            x, y = pos_map.get(self.watermark_pos_mode, (w - tw - margin, h - margin))
+
+        # 旋转变换
+        if self.watermark_angle != 0:
+            painter.save()
+            cx, cy = x + tw // 2, y - th // 2
+            transform = QTransform()
+            transform.translate(cx, cy)
+            transform.rotate(self.watermark_angle)
+            transform.translate(-cx, -cy)
+            painter.setTransform(transform)
 
         # 阴影
         if self.shadow_enabled:
@@ -325,13 +444,19 @@ class MainWindow(QWidget):
         # 描边
         if self.outline_enabled:
             outline_color = QColor(0, 0, 0, self.font_opacity)
-            for dx, dy in [(-1,0), (1,0), (0,-1), (0,1)]:
-                painter.setPen(outline_color)
-                painter.drawText(x+dx, y+dy, text)
+            for dx in [-1, 0, 1]:
+                for dy in [-1, 0, 1]:
+                    if dx != 0 or dy != 0:
+                        painter.setPen(outline_color)
+                        painter.drawText(x + dx, y + dy, text)
             painter.setPen(color)
 
         # 正文
         painter.drawText(x, y, text)
+
+        if self.watermark_angle != 0:
+            painter.restore()
+
         painter.end()
         self.watermarked_pixmap = base_pixmap
         self.preview_label.setPixmap(base_pixmap.scaled(
