@@ -1,9 +1,10 @@
 import sys
 import os
+import json
 from PySide6.QtWidgets import (
     QApplication, QWidget, QHBoxLayout, QVBoxLayout, QListWidget, QListWidgetItem,
     QLabel, QLineEdit, QPushButton, QSizePolicy, QFrame, QFileDialog, QMessageBox,
-    QComboBox, QRadioButton, QButtonGroup, QGroupBox, QColorDialog, QSlider, QFontComboBox, QSpinBox, QCheckBox, QGridLayout
+    QComboBox, QRadioButton, QButtonGroup, QGroupBox, QColorDialog, QSlider, QFontComboBox, QSpinBox, QCheckBox, QGridLayout, QInputDialog
 )
 from PySide6.QtGui import QPixmap, QIcon, QPainter, QColor, QFont, QMouseEvent, QTransform
 from PySide6.QtCore import Qt, QSize, QPoint
@@ -12,10 +13,19 @@ from PySide6.QtCore import Qt, QSize, QPoint
 SUPPORTED_FORMATS = (".jpg", ".jpeg", ".png", ".bmp", ".tiff")
 
 
+TEMPLATE_DIR = os.path.join(os.path.dirname(__file__), "../templates")
+LAST_TEMPLATE_PATH = os.path.join(TEMPLATE_DIR, "last_template.json")
+
+
+def ensure_template_dir():
+    if not os.path.exists(TEMPLATE_DIR):
+        os.makedirs(TEMPLATE_DIR)
+
+
 class MainWindow(QWidget):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("Watermark Studio – 文件导入与导出增强版")
+        self.setWindowTitle("Watermark Studio Pro – 全功能版")
         self.resize(1150, 650)
         self.setAcceptDrops(True)
 
@@ -43,6 +53,9 @@ class MainWindow(QWidget):
         self.watermark_angle = 0  # 旋转角度
 
         self.init_ui()
+
+        # 移除自动加载模板
+        # self.load_last_template()
 
     # -------------------- 界面布局 --------------------
 
@@ -89,6 +102,19 @@ class MainWindow(QWidget):
         self.text_input = QLineEdit()
         self.text_input.setPlaceholderText("输入水印文本")
         style_layout.addWidget(self.text_input)
+
+        # 模板按钮区
+        template_btn_layout = QHBoxLayout()
+        self.btn_save_tpl = QPushButton("保存模板")
+        self.btn_save_tpl.clicked.connect(self.save_template_dialog)
+        template_btn_layout.addWidget(self.btn_save_tpl)
+        self.btn_load_tpl = QPushButton("加载模板")
+        self.btn_load_tpl.clicked.connect(self.load_template_dialog)
+        template_btn_layout.addWidget(self.btn_load_tpl)
+        self.btn_del_tpl = QPushButton("删除模板")
+        self.btn_del_tpl.clicked.connect(self.delete_template_dialog)
+        template_btn_layout.addWidget(self.btn_del_tpl)
+        style_layout.addLayout(template_btn_layout)
 
         font_layout = QHBoxLayout()
         font_layout.addWidget(QLabel("字体:"))
@@ -499,6 +525,112 @@ class MainWindow(QWidget):
             self.watermarked_pixmap.save(output_path, self.output_format)
 
         QMessageBox.information(self, "完成", f"所有图片已导出到：\n{dir_path}")
+
+    # -------------------- 模板保存与加载 --------------------
+
+    def save_template(self, name):
+        ensure_template_dir()
+        data = {
+            "text": self.text_input.text(),
+            "font_family": self.font_family,
+            "font_size": self.font_size,
+            "font_bold": self.font_bold,
+            "font_italic": self.font_italic,
+            "font_color": self.font_color.rgba(),
+            "font_opacity": self.font_opacity,
+            "shadow_enabled": self.shadow_enabled,
+            "outline_enabled": self.outline_enabled,
+            "watermark_pos_mode": self.watermark_pos_mode,
+            "watermark_angle": self.watermark_angle,
+            "watermark_custom_pos": (
+                [self.watermark_custom_pos.x(), self.watermark_custom_pos.y()]
+                if self.watermark_custom_pos else None
+            ),
+        }
+        with open(os.path.join(TEMPLATE_DIR, f"{name}.json"), "w", encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False, indent=2)
+        # 记录最后一次模板
+        with open(LAST_TEMPLATE_PATH, "w", encoding="utf-8") as f:
+            json.dump({"last": name}, f)
+
+    def load_template(self, name):
+        path = os.path.join(TEMPLATE_DIR, f"{name}.json")
+        if not os.path.exists(path):
+            QMessageBox.warning(self, "提示", "模板不存在")
+            return
+        with open(path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        self.text_input.setText(data.get("text", ""))
+        self.font_family = data.get("font_family", "Arial")
+        self.font_combo.setCurrentFont(QFont(self.font_family))
+        self.font_size = data.get("font_size", 36)
+        self.font_size_spin.setValue(self.font_size)
+        self.font_bold = data.get("font_bold", False)
+        self.bold_check.setChecked(self.font_bold)
+        self.font_italic = data.get("font_italic", False)
+        self.italic_check.setChecked(self.font_italic)
+        self.font_color = QColor.fromRgba(data.get("font_color", QColor(255,255,255,180).rgba()))
+        self.color_btn.setStyleSheet(f"background: {self.font_color.name()};")
+        self.font_opacity = data.get("font_opacity", 180)
+        self.opacity_slider.setValue(self.font_opacity)
+        self.shadow_enabled = data.get("shadow_enabled", False)
+        self.shadow_check.setChecked(self.shadow_enabled)
+        self.outline_enabled = data.get("outline_enabled", False)
+        self.outline_check.setChecked(self.outline_enabled)
+        self.watermark_pos_mode = data.get("watermark_pos_mode", "bottom_right")
+        for m, btn in self.pos_buttons.items():
+            btn.setChecked(m == self.watermark_pos_mode)
+        self.watermark_angle = data.get("watermark_angle", 0)
+        self.rotate_slider.setValue(self.watermark_angle)
+        pos = data.get("watermark_custom_pos")
+        self.watermark_custom_pos = QPoint(*pos) if pos else None
+        self.apply_watermark()
+
+    def list_templates(self):
+        ensure_template_dir()
+        return [
+            f[:-5] for f in os.listdir(TEMPLATE_DIR)
+            if f.endswith(".json") and f != "last_template.json"
+        ]
+
+    def delete_template(self, name):
+        path = os.path.join(TEMPLATE_DIR, f"{name}.json")
+        if os.path.exists(path):
+            os.remove(path)
+
+    def load_last_template(self):
+        if os.path.exists(LAST_TEMPLATE_PATH):
+            with open(LAST_TEMPLATE_PATH, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            last = data.get("last")
+            if last:
+                self.load_template(last)
+
+    # -------------------- 模板按钮交互 --------------------
+    def save_template_dialog(self):
+        name, ok = QInputDialog.getText(self, "保存模板", "请输入模板名称：")
+        if ok and name.strip():
+            self.save_template(name.strip())
+            QMessageBox.information(self, "提示", f"模板“{name}”已保存")
+
+    def load_template_dialog(self):
+        templates = self.list_templates()
+        if not templates:
+            QMessageBox.information(self, "提示", "暂无可用模板")
+            return
+        name, ok = QInputDialog.getItem(self, "加载模板", "选择模板：", templates, editable=False)
+        if ok and name:
+            self.load_template(name)
+
+    def delete_template_dialog(self):
+        templates = self.list_templates()
+        if not templates:
+            QMessageBox.information(self, "提示", "暂无可用模板")
+            return
+        name, ok = QInputDialog.getItem(self, "删除模板", "选择要删除的模板：", templates, editable=False)
+        if ok and name:
+            self.delete_template(name)
+            QMessageBox.information(self, "提示", f"模板“{name}”已删除")
 
 
 if __name__ == "__main__":
