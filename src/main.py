@@ -3,7 +3,7 @@ import os
 from PySide6.QtWidgets import (
     QApplication, QWidget, QHBoxLayout, QVBoxLayout, QListWidget, QListWidgetItem,
     QLabel, QLineEdit, QPushButton, QSizePolicy, QFrame, QFileDialog, QMessageBox,
-    QComboBox, QRadioButton, QButtonGroup, QGroupBox
+    QComboBox, QRadioButton, QButtonGroup, QGroupBox, QColorDialog, QSlider, QFontComboBox, QSpinBox, QCheckBox
 )
 from PySide6.QtGui import QPixmap, QIcon, QPainter, QColor, QFont
 from PySide6.QtCore import Qt, QSize
@@ -23,6 +23,16 @@ class MainWindow(QWidget):
         self.current_image = None
         self.watermarked_pixmap = None
         self.output_format = "JPEG"
+
+        # 新增水印样式相关属性
+        self.font_family = "Arial"
+        self.font_size = 36
+        self.font_bold = False
+        self.font_italic = False
+        self.font_color = QColor(255, 255, 255, 180)
+        self.font_opacity = 180  # 0-255
+        self.shadow_enabled = False
+        self.outline_enabled = False
 
         self.init_ui()
 
@@ -68,6 +78,64 @@ class MainWindow(QWidget):
         self.text_input.setPlaceholderText("输入水印文本")
         right_layout.addWidget(self.text_input)
 
+        # ----------- 新增：水印样式设置 -----------
+        # 字体选择
+        font_layout = QHBoxLayout()
+        font_layout.addWidget(QLabel("字体:"))
+        self.font_combo = QFontComboBox()
+        self.font_combo.setCurrentFont(QFont(self.font_family))
+        self.font_combo.currentFontChanged.connect(self.on_font_changed)
+        font_layout.addWidget(self.font_combo)
+
+        font_layout.addWidget(QLabel("字号:"))
+        self.font_size_spin = QSpinBox()
+        self.font_size_spin.setRange(10, 120)
+        self.font_size_spin.setValue(self.font_size)
+        self.font_size_spin.valueChanged.connect(self.on_font_size_changed)
+        font_layout.addWidget(self.font_size_spin)
+        right_layout.addLayout(font_layout)
+
+        # 粗体、斜体
+        style_layout = QHBoxLayout()
+        self.bold_check = QCheckBox("粗体")
+        self.bold_check.stateChanged.connect(self.on_bold_changed)
+        style_layout.addWidget(self.bold_check)
+        self.italic_check = QCheckBox("斜体")
+        self.italic_check.stateChanged.connect(self.on_italic_changed)
+        style_layout.addWidget(self.italic_check)
+        right_layout.addLayout(style_layout)
+
+        # 颜色选择
+        color_layout = QHBoxLayout()
+        color_layout.addWidget(QLabel("颜色:"))
+        self.color_btn = QPushButton()
+        self.color_btn.setFixedSize(30, 20)
+        self.color_btn.setStyleSheet(f"background: {self.font_color.name()};")
+        self.color_btn.clicked.connect(self.choose_color)
+        color_layout.addWidget(self.color_btn)
+        right_layout.addLayout(color_layout)
+
+        # 透明度
+        opacity_layout = QHBoxLayout()
+        opacity_layout.addWidget(QLabel("透明度:"))
+        self.opacity_slider = QSlider(Qt.Horizontal)
+        self.opacity_slider.setRange(0, 255)
+        self.opacity_slider.setValue(self.font_opacity)
+        self.opacity_slider.valueChanged.connect(self.on_opacity_changed)
+        opacity_layout.addWidget(self.opacity_slider)
+        right_layout.addLayout(opacity_layout)
+
+        # 阴影、描边
+        effect_layout = QHBoxLayout()
+        self.shadow_check = QCheckBox("阴影")
+        self.shadow_check.stateChanged.connect(self.on_shadow_changed)
+        effect_layout.addWidget(self.shadow_check)
+        self.outline_check = QCheckBox("描边")
+        self.outline_check.stateChanged.connect(self.on_outline_changed)
+        effect_layout.addWidget(self.outline_check)
+        right_layout.addLayout(effect_layout)
+        # ----------- 新增结束 -----------
+
         self.btn_apply = QPushButton("应用水印")
         self.btn_apply.clicked.connect(self.apply_watermark)
         right_layout.addWidget(self.btn_apply)
@@ -110,6 +178,42 @@ class MainWindow(QWidget):
 
         right_layout.addStretch(1)
         main_layout.addWidget(right_frame)
+
+    # ---------- 字体与样式相关槽函数 ----------
+    def on_font_changed(self, font):
+        self.font_family = font.family()
+        self.apply_watermark()
+
+    def on_font_size_changed(self, size):
+        self.font_size = size
+        self.apply_watermark()
+
+    def on_bold_changed(self, state):
+        self.font_bold = (state == Qt.Checked)
+        self.apply_watermark()
+
+    def on_italic_changed(self, state):
+        self.font_italic = (state == Qt.Checked)
+        self.apply_watermark()
+
+    def choose_color(self):
+        color = QColorDialog.getColor(self.font_color, self, "选择字体颜色")
+        if color.isValid():
+            self.font_color = color
+            self.color_btn.setStyleSheet(f"background: {color.name()};")
+            self.apply_watermark()
+
+    def on_opacity_changed(self, value):
+        self.font_opacity = value
+        self.apply_watermark()
+
+    def on_shadow_changed(self, state):
+        self.shadow_enabled = (state == Qt.Checked)
+        self.apply_watermark()
+
+    def on_outline_changed(self, state):
+        self.outline_enabled = (state == Qt.Checked)
+        self.apply_watermark()
 
     # -------------------- 拖拽导入 --------------------
 
@@ -184,7 +288,7 @@ class MainWindow(QWidget):
             self.load_image(self.image_paths[index])
 
     def apply_watermark(self):
-        """简单文字水印（右下角）"""
+        """高级文字水印（右下角，支持字体、颜色、透明度、阴影、描边）"""
         if not self.current_image:
             QMessageBox.warning(self, "提示", "请先导入图片！")
             return
@@ -197,13 +301,36 @@ class MainWindow(QWidget):
         base_pixmap = QPixmap(self.current_image)
         painter = QPainter(base_pixmap)
         painter.setRenderHint(QPainter.Antialiasing)
-        font = QFont("Arial", 36)
+        font = QFont(self.font_family, self.font_size)
+        font.setBold(self.font_bold)
+        font.setItalic(self.font_italic)
         painter.setFont(font)
-        painter.setPen(QColor(255, 255, 255, 180))
+        color = QColor(self.font_color)
+        color.setAlpha(self.font_opacity)
+        painter.setPen(color)
+
+        # 计算文本位置
         tw = painter.fontMetrics().boundingRect(text).width()
         th = painter.fontMetrics().boundingRect(text).height()
         x = base_pixmap.width() - tw - 30
         y = base_pixmap.height() - th - 20
+
+        # 阴影
+        if self.shadow_enabled:
+            shadow_color = QColor(0, 0, 0, int(self.font_opacity * 0.6))
+            painter.setPen(shadow_color)
+            painter.drawText(x+2, y+2, text)
+            painter.setPen(color)
+
+        # 描边
+        if self.outline_enabled:
+            outline_color = QColor(0, 0, 0, self.font_opacity)
+            for dx, dy in [(-1,0), (1,0), (0,-1), (0,1)]:
+                painter.setPen(outline_color)
+                painter.drawText(x+dx, y+dy, text)
+            painter.setPen(color)
+
+        # 正文
         painter.drawText(x, y, text)
         painter.end()
         self.watermarked_pixmap = base_pixmap
